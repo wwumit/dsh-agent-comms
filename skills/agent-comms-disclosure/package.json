@@ -1,0 +1,7 @@
+{
+  "name": "agent-comms-disclosure",
+  "version": "1.0.0",
+  "description": "Agent 间通信披露契约（check/gen/validate，ACD-001~005）",
+  "private": true,
+  "license": "MIT"
+}
