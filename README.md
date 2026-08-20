@@ -3,7 +3,12 @@
 <p align="center">系列：合规（compliancehub）· 办公效率（office）· 插件工具（plugin-tools）· <b>Agent 通信合规（agent-comms）</b></p>
 <hr>
 
-# skills-agent-comms — Agent 通信合规系列
+# dsh-agent-comms — Agent 通信合规系列
+<p align="center">
+  <img src="https://compliancehub.cn/badge/package/dsh-agent-comms" alt="CHA2A 认证" title="CHA2A 认证徽章（did:cha2a:dsh-agent-comms）"> ·
+  <a href="https://compliancehub.cn/store/">dshlib 图书馆</a> 收录 · <a href="https://compliancehub.cn/store/scan/">安全扫描报告</a>
+</p>
+
 
 Agent 间通信（A2A/MCP）的**治理层**：协议层已就绪，信任层才是硬仗。
 本系列把已验证的治理引擎（规则 → 检查 → 评分 → 报告）与披露/证据理念，迁移到通信层。
