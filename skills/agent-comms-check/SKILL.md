@@ -10,7 +10,8 @@ description: |
   Trigger: agent-comms-check, 通信合规, Agent Card 检查, A2A检查, MCP配置检查, 智能体通信检查
 disclosure:
   cloud: false
-  network: []
+  network:
+    - 默认离线；--verify-registry 时查询 cha2a registry（compliancehub.cn，CHA2A_REGISTRY 可覆盖）
   offline_mode: true
   api_keys: []
   jurisdiction: ["CN"]
@@ -34,13 +35,16 @@ disclaimer: 本工具为辅助性参考工具，不构成法律或安全建议�
 - **ACC-005** security.authentication（none 非本地告警；apiKey 凭证引用）
 - **ACC-006** MCP 配置（env 硬编码凭据、远程端点 HTTPS、command/url）
 - **ACC-007** 通信披露扩展（端点/凭据/法域/保留——对齐披露理念）
-- **ACC-008** 版本与文档（SemVer、documentationUrl）
+- **ACC-008** 在线核验：声明身份 ↔ CHA2A registry 对账（DID 注册/等级/撤销；--verify-registry）
 
 ## Usage
 ```bash
-python3 scripts/agent-comms-check.py --dir <Agent项目目录> --format text   # 终端报告
+python3 scripts/agent-comms-check.py --dir <Agent项目目录> --format text   # 终端报告（离线结构检查）
+python3 scripts/agent-comms-check.py --dir <Agent项目目录> --verify-registry --format text  # 在线（CHA2A registry 对账声明身份）
 python3 scripts/agent-comms-check.py --dir <Agent项目目录> --format json   # JSON 报告
 ```
+
+**在线模式（--verify-registry）**：调用 CHA2A registry 对账配置声明的身份（security.trustAnchor / did / MCP server did）——是否注册、认证等级、是否撤销（ACC-008）。未注册/已撤销会提示；`CHA2A_REGISTRY` 可覆盖默认 registry。
 
 ## 锚定协议
 - **A2A**（Agent 间通信）：Agent Card 规范（name/description/url/version 必填 + capabilities/security）
