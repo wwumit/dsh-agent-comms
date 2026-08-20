@@ -21,6 +21,10 @@ import json
 import os
 import re
 import sys
+import urllib.request
+
+# CHA2A registry 端点（可覆盖；--verify-registry 时用于核验声明身份/披露）
+CHA2A_BASE = os.environ.get("CHA2A_REGISTRY", "https://compliancehub.cn")
 
 CARD_NAMES = ("agent-card.json", "agentcard.json", "agent_card.json")
 MCP_NAMES = ("mcp.json", "mcp-config.json")
@@ -35,6 +39,38 @@ def _find(base, names):
     return None
 
 
+def _verify_registry_did(did, issues, add, timeout=10):
+    """在线核验：CHA2A registry 查询 DID 注册/等级/撤销状态。
+    用于"配置声明的身份 ↔ registry 事实"对账（防伪声明）。"""
+    try:
+        from urllib.parse import quote
+        url = f"{CHA2A_BASE}/api/v1/trust/query?did={quote(did, safe='')}"
+        req = urllib.request.Request(url, headers={"User-Agent": "agent-comms-check/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            add("ACC-008", "medium", f"声明的身份未在 CHA2A registry 注册（{did[:40]}）",
+                "配置声明的 DID 不存在——需先注册（POST /api/v1/register）")
+        else:
+            add("ACC-008", "medium", f"CHA2A registry 核验失败（{did[:40]}）: HTTP {e.code}",
+                "registry 查询失败，稍后重试或检查 CHA2A_REGISTRY")
+        return
+    except Exception as e:
+        add("ACC-008", "medium", f"CHA2A registry 核验失败（{did[:40]}）: {str(e)[:60]}",
+            "无法连接 cha2a registry（CHA2A_REGISTRY 可覆盖）")
+        return
+    record = data.get("record") or data
+    status = record.get("status", "active")
+    if status not in ("active", None):
+        add("ACC-008", "high", f"声明的身份已撤销/非活跃（{did[:40]}，status={status}）",
+            "配置声明的 DID 在 registry 中已撤销——不可用于通信")
+    level = record.get("level", 0)
+    if level == 0:
+        add("ACC-008", "low", f"声明的身份未认证（{did[:40]}，L0）",
+            "L0 表示尚无验证证据；建议声明已认证的 DID（L1+）")
+
+
 def _load_json(path):
     try:
         with open(path, encoding="utf-8") as f:
@@ -43,7 +79,7 @@ def _load_json(path):
         return None
 
 
-def check(target: str) -> dict:
+def check(target: str, verify_registry: bool = False) -> dict:
     issues = []
 
     def add(rule, severity, found, recommendation):
@@ -143,30 +179,64 @@ def check(target: str) -> dict:
             add("ACC-007", "low", "Agent Card 未含 disclosure 扩展字段",
                 "建议声明通信数据行为（端点/凭据/法域/保留）——对齐 wwumit 披露理念")
 
+    # ACC-008 在线核验：配置声明的身份 ↔ CHA2A registry 事实对账（防伪声明）
+    if verify_registry:
+        verified_any = False
+        # 1) Agent Card 中的身份声明（did / trustAnchor / security.did）
+        if card is not None and isinstance(card, dict):
+            sec = card.get("security") or {}
+            dids = []
+            for k in ("did", "trustAnchor", "agentDid"):
+                if sec.get(k):
+                    dids.append(sec[k])
+            for d in dids:
+                if isinstance(d, str) and d.startswith("did:"):
+                    _verify_registry_did(d, issues, add)
+                    verified_any = True
+        # 2) MCP server 中的身份声明（server.did / url 域名对应的 registry 记录不在此列）
+        mcp_path = _find(target, MCP_NAMES)
+        if mcp_path is not None:
+            mcp = _load_json(mcp_path)
+            servers = (mcp or {}).get("mcpServers") or {}
+            if isinstance(servers, dict):
+                for name, cfg in servers.items():
+                    if isinstance(cfg, dict) and isinstance(cfg.get("did"), str) and cfg["did"].startswith("did:"):
+                        _verify_registry_did(cfg["did"], issues, add)
+                        verified_any = True
+        if not verified_any:
+            add("ACC-008", "low", "配置中未发现可在线核验的 DID 身份声明",
+                "--verify-registry 需要配置声明 did/trustAnchor 才能对账")
+
     # 评分
     sev_w = {"high": 20, "medium": 8, "low": 3}
     score = max(0, 100 - sum(sev_w.get(i["severity"], 0) for i in issues))
     has_high = any(i["severity"] == "high" for i in issues)
     conclusion = "PASS" if score >= 90 and not has_high else ("NEEDS_FIX" if has_high else "REVIEW")
-    return {"score": score, "conclusion": conclusion, "issues": issues}
+    return {"score": score, "conclusion": conclusion, "issues": issues,
+            "mode": "online" if verify_registry else "offline",
+            "registry": CHA2A_BASE if verify_registry else None}
 
 
 def main():
     ap = argparse.ArgumentParser(description="Agent 间通信配置合规检查器")
     ap.add_argument("--dir", "-d", required=True, help="目标 Agent 项目目录")
     ap.add_argument("--format", "-f", choices=["text", "json"], default="text")
+    ap.add_argument("--verify-registry", action="store_true",
+                    help="在线核验：调用 CHA2A registry 对账配置声明的身份（DID 注册/等级/撤销）")
     args = ap.parse_args()
 
     if not os.path.isdir(args.dir):
         print(f"错误：目录不存在 {args.dir}", file=sys.stderr)
         sys.exit(1)
 
-    result = check(args.dir)
+    result = check(args.dir, verify_registry=args.verify_registry)
     if args.format == "json":
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     print("╔══ agent-comms-check ══ " + args.dir)
+    mode = "在线（CHA2A registry）" if args.verify_registry else "离线（结构检查）"
+    print(f"║ 模式：{mode}")
     print(f"║ 评分：{result['score']}/100  |  结论：{result['conclusion']}")
     if not result["issues"]:
         print("║ ✅ Agent 通信配置合规，未发现问题")
