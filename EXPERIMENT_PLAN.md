@@ -71,3 +71,13 @@ rm -rf ~/.dsh/profiles/test-trust        # 删实验 profile
 rm -rf plugins/agent-trust-probe/        # 删插件源码
 # 主实例不受影响（从未被触碰）
 ```
+
+## 八、闭环实证（2026-08-20）——先于运行时实验的独立闭环
+
+**场景**：trust-probe 作为 CHA2A 消费方，对真实 Agent 身份做在线信任核验（不依赖 §三 的 DSH 运行时插件实验）。
+
+- **Agent 身份端**：`did:cha2a:agent:dshlib` 已注册（CHA2A Agent Identity 分册 agent-identity.md 的首个 Agent 身份）——registered ✓ · L0 · active · 证据凭证 1 条（verifier: `did:cha2a:verifier:dshlib`，test-result，哈希闭环一致）
+- **核验端**：`agent-trust-probe.py --dir <trust.json 声明 did:cha2a:agent:dshlib + 委托链> --verify-registry` → **100/100 PASS**（registry: https://compliancehub.cn；ATP-004 在线核验 注册/等级/撤销/凭证状态；委托链逐跳核验）
+- **闭环**：Agent 身份注册（registry）→ 信任级联核验（trust-probe 消费 trust/query）→ 证据可核验（evidence/query + 哈希闭环）
+
+**意义**：CHA2A"身份 + 信任 + 证据"体系第一个真实的端到端消费方实证；同时是 agent 身份协议（官方讨论区 #3622 系列分册）的运行背书。
