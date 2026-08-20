@@ -14,7 +14,7 @@ Agent 间通信（A2A/MCP）的**治理层**：协议层已就绪，信任层才
 |---|---|---|
 | **agent-comms-check** | 通信配置/协议合规（A2A Agent Card + MCP 配置，ACC-001~008） | ✅ v1.0.0 |
 | **agent-comms-disclosure** | 通信数据行为披露契约（check/gen/validate，ACD-001~005，schema agent-comms-disclosure-v1） | ✅ v1.0.0 |
-| agent-trust-probe | 信任级联/溯源验证（呼应书稿 6.6.3） | 规划 |
+| **agent-trust-probe** | 信任级联/溯源验证（委托链逐跳核验 + 消息可核验，ATP-001~008，对齐 CHA2A 委托链） | ✅ v1.0.0 |
 | agent-comms-audit | 消息/调用链审计 | 规划 |
 
 详见 [AGENT_COMMS_SERIES.md](../../AGENT_COMMS_SERIES.md)（万卡共创）。

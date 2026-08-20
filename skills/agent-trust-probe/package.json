@@ -1,0 +1,11 @@
+{
+  "name": "agent-trust-probe",
+  "version": "1.0.0",
+  "description": "Agent 间信任级联/溯源验证器（ATP-001~008，对齐 CHA2A 委托链 + 消息可核验）",
+  "main": "scripts/agent-trust-probe.py",
+  "scripts": {
+    "test": "python3 tests/cases.py"
+  },
+  "author": "wwumit",
+  "license": "Apache-2.0"
+}
