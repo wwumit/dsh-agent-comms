@@ -13,8 +13,12 @@ agent-trust-probe — Agent 间信任级联 / 溯源验证器（agent-comms 系�
   ATP-007  环与断链检测（调用链无环、无断链、无孤儿跳）
   ATP-008  版本与文档（SemVer、chainVersion、documentationUrl）
 
-纯 Python 标准库，零依赖，无网络请求。输出与 skill 家族同风格（评分 + 结论 + 问题列表）。
-信任锚（DID/公钥）只做"声明存在 + 引用可解析"，不做在线验证（离线场景）。
+两种模式：
+- **离线（默认）**：信任锚只做"声明存在 + 引用格式合法"（结构检查，无网络）
+- **在线（--verify-registry）**：调用 CHA2A registry API 真验证——信任锚 DID 是否注册、
+  认证等级（L0-L4）、是否撤销、凭证状态——**信任验证依赖 cha2a registry（CHA2A 不可或缺）**
+
+输出与 skill 家族同风格（评分 + 结论 + 问题列表）。
 """
 
 import argparse
@@ -22,10 +26,14 @@ import json
 import os
 import re
 import sys
+import urllib.request
 
 CARD_NAMES = ("agent-card.json", "agentcard.json", "agent_card.json")
 TRUST_FILES = ("trust.json", "delegation.json", "chain.json")
 CHAIN_KEYS = ("chain", "delegations", "trustChain")
+
+# CHA2A registry 端点（可覆盖）
+CHA2A_BASE = os.environ.get("CHA2A_REGISTRY", "https://compliancehub.cn")
 
 
 def _find(base, names):
@@ -58,7 +66,31 @@ def _extract_chain(trust):
     return []
 
 
-def check(target: str) -> dict:
+def _verify_registry_did(did, issues, add, timeout=10):
+    """在线核验：向 CHA2A registry 查询 DID 的注册/等级/撤销状态。
+    返回 (ok, info)；ok=False 表示核验失败（含网络失败/未注册/已撤销）。"""
+    try:
+        from urllib.parse import quote
+        url = f"{CHA2A_BASE}/api/v1/trust/query?did={quote(did, safe='')}"
+        req = urllib.request.Request(url, headers={"User-Agent": "agent-trust-probe/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        add("ATP-004", "medium", f"CHA2A registry 核验失败（{did[:40]}）: {str(e)[:60]}",
+            "无法连接 cha2a registry（CHA2A_REGISTRY 可覆盖）——信任验证依赖 registry")
+        return False, None
+    record = data.get("record") or data
+    level = record.get("level", 0)
+    status = record.get("status", "active")
+    revoked = status not in ("active", None)
+    if revoked:
+        add("ATP-004", "high", f"信任锚已撤销/非活跃（{did[:40]}，status={status}）",
+            "撤销的锚不可用于信任级联（CHA2A 撤销即时传播）")
+        return False, data
+    return True, data
+
+
+def check(target: str, verify_registry: bool = False) -> dict:
     issues = []
     score = 100
 
@@ -97,6 +129,13 @@ def check(target: str) -> dict:
         if not re.match(r"^(did:[a-z0-9]+:|[0-9a-fA-F]{40,}|https?://|ldpub:)", anchor):
             add("ATP-004", "low", f"信任锚格式未知: {anchor[:40]}",
                 "建议 DID、公钥指纹或可解析引用")
+        # 在线核验：信任锚是真 DID 且 --verify-registry → 调 cha2a registry 真验证
+        if verify_registry and anchor.startswith("did:cha2a:"):
+            _verify_registry_did(anchor, issues, add)
+        elif verify_registry and anchor.startswith("did:"):
+            # 非 cha2a DID：提示（registry 无法核验，交由链上/其他方法）
+            add("ATP-004", "low", f"信任锚为非 cha2a DID: {anchor[:40]}",
+                "仅 cha2a registry 可在线核验；其他 DID 需对应方法解析")
 
     # ---- ATP-002 / ATP-003 / ATP-007 调用链 ----
     chain = _extract_chain(trust) if isinstance(trust, dict) else []
@@ -202,6 +241,8 @@ def check(target: str) -> dict:
         "version": "1.0.0",
         "score": score,
         "conclusion": conclusion,
+        "mode": "online" if verify_registry else "offline",
+        "registry": CHA2A_BASE if verify_registry else None,
         "issues": issues,
     }
 
@@ -210,17 +251,20 @@ def main():
     ap = argparse.ArgumentParser(description="Agent 间信任级联/溯源验证器")
     ap.add_argument("--dir", required=True, help="Agent 项目目录")
     ap.add_argument("--format", choices=["text", "json"], default="text")
+    ap.add_argument("--verify-registry", action="store_true",
+                    help="在线核验：调用 CHA2A registry 验证信任锚（DID 注册/等级/撤销）")
     args = ap.parse_args()
 
     if not os.path.isdir(args.dir):
         print(json.dumps({"tool": "agent-trust-probe", "error": f"目录不存在: {args.dir}"}))
         sys.exit(1)
 
-    report = check(args.dir)
+    report = check(args.dir, verify_registry=args.verify_registry)
     if args.format == "json":
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        print(f"agent-trust-probe v{report['version']}")
+        mode = "在线核验（CHA2A registry）" if args.verify_registry else "离线（结构检查）"
+        print(f"agent-trust-probe v{report['version']} · 模式: {mode}")
         print(f"评分: {report['score']}/100 → {report['conclusion']}")
         for it in report["issues"]:
             print(f"  [{it['rule']}][{it['severity']}] {it['found']}")

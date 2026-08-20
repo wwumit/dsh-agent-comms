@@ -44,9 +44,11 @@ def _mk(base, name, files):
     return d
 
 
-def _run(target):
-    r = subprocess.run([sys.executable, str(PROBE), "--dir", str(target), "--format", "json"],
-                       capture_output=True, text=True)
+def _run(target, extra=None):
+    cmd = [sys.executable, str(PROBE), "--dir", str(target), "--format", "json"]
+    if extra:
+        cmd += extra
+    r = subprocess.run(cmd, capture_output=True, text=True)
     return json.loads(r.stdout)
 
 
@@ -106,6 +108,45 @@ def main():
                 failed += 1
                 print(f"❌ {name}: conclusion={report.get('conclusion')} score={score} rules={rules}")
                 print(f"   期望规则含 {expect_rules}")
+
+    # ---- 在线核验（--verify-registry，需要 CHA2A registry 可达）----
+    online_ok = True
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            d = _mk(Path(td), "online_real", {"agent-card.json": GOOD_CARD,
+                                              "trust.json": dict(GOOD_TRUST, trustAnchor="did:cha2a:package:dsh-cc-tui"),
+                                              "evidence/calls.json": {"calls": []}})
+            report = _run(d, ["--verify-registry"])
+            rules = [i["rule"] for i in report.get("issues", [])]
+            print(f"🔌 在线·真实DID(L4): mode={report.get('mode')} registry={report.get('registry')} "
+                  f"conclusion={report.get('conclusion')} rules={rules}")
+            if report.get("mode") != "online" or "ATP-004" in rules:
+                online_ok = False
+    except Exception as e:
+        print(f"❌ 在线·真实DID: 异常 {e}")
+        online_ok = False
+
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            d = _mk(Path(td), "online_fake", {"agent-card.json": GOOD_CARD,
+                                              "trust.json": dict(GOOD_TRUST, trustAnchor="did:cha2a:org:definitely-not-registered-xyz"),
+                                              "evidence/calls.json": {"calls": []}})
+            report = _run(d, ["--verify-registry"])
+            rules = [i["rule"] for i in report.get("issues", [])]
+            print(f"🔌 在线·未注册DID: mode={report.get('mode')} conclusion={report.get('conclusion')} rules={rules}")
+            if "ATP-004" not in rules:
+                online_ok = False
+    except Exception as e:
+        print(f"❌ 在线·未注册DID: 异常 {e}")
+        online_ok = False
+
+    if online_ok:
+        passed += 1
+        print("✅ 在线核验（CHA2A registry）")
+    else:
+        failed += 1
+        print("❌ 在线核验（CHA2A registry）")
+
     print(f"\n{passed}/{passed+failed} 通过")
     sys.exit(1 if failed else 0)
 

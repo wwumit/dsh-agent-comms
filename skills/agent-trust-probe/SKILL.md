@@ -11,7 +11,8 @@ description: |
   Trigger: agent-trust-probe, 信任级联, 信任溯源, 委托链, delegation chain, trust probe, 消息可核验
 disclosure:
   cloud: false
-  network: []
+  network:
+    - 默认离线；--verify-registry 时查询 cha2a registry（compliancehub.cn，CHA2A_REGISTRY 可覆盖）
   offline_mode: true
   api_keys: []
   jurisdiction: ["CN"]
@@ -21,7 +22,7 @@ permissions:
   filesystem:
     write: []
   env: []
-disclaimer: 本工具为辅助性参考工具，不构成法律或安全建议；信任锚（DID/公钥）仅做声明检查，不做在线验证。
+disclaimer: 本工具为辅助性参考工具，不构成法律或安全建议；在线核验依赖 cha2a registry 可达性，离线仅做结构检查。
 ---
 
 # 🕵️ agent-trust-probe — Agent 间信任级联/溯源验证器
@@ -39,9 +40,14 @@ disclaimer: 本工具为辅助性参考工具，不构成法律或安全建议�
 
 ## Usage
 ```bash
-python3 scripts/agent-trust-probe.py --dir <Agent项目目录> --format text   # 终端报告
+python3 scripts/agent-trust-probe.py --dir <Agent项目目录> --format text   # 离线（结构检查）
+python3 scripts/agent-trust-probe.py --dir <Agent项目目录> --verify-registry --format text  # 在线（CHA2A registry 核验信任锚）
 python3 scripts/agent-trust-probe.py --dir <Agent项目目录> --format json   # JSON 报告
 ```
+
+**两种模式**：
+- **离线（默认）**：信任锚做结构检查（声明存在 + 格式合法），零网络
+- **在线（--verify-registry）**：调用 CHA2A registry 真验证信任锚——DID 是否注册、认证等级（L0-L4）、是否撤销。**信任验证依赖 cha2a registry**（`CHA2A_REGISTRY` 环境变量可覆盖默认 https://compliancehub.cn）。未注册/已撤销的锚会报 ATP-004。
 
 ## 信任声明格式（trust.json 示例）
 ```json
